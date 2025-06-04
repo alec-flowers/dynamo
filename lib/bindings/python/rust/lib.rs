@@ -94,7 +94,7 @@ fn log_message(level: &str, message: &str, module: &str, file: &str, line: u32) 
 }
 
 #[pyfunction]
-#[pyo3(signature = (model_type, endpoint, model_path, model_name=None, context_length=None, kv_cache_block_size=None))]
+#[pyo3(signature = (model_type, endpoint, model_path, model_name=None, context_length=None, kv_cache_block_size=None, force=false))]
 fn register_llm<'p>(
     py: Python<'p>,
     model_type: ModelType,
@@ -103,6 +103,7 @@ fn register_llm<'p>(
     model_name: Option<&str>,
     context_length: Option<usize>,
     kv_cache_block_size: Option<usize>,
+    force: bool,
 ) -> PyResult<Bound<'p, PyAny>> {
     let model_type_obj = match model_type {
         ModelType::Chat => llm_rs::model_type::ModelType::Chat,
@@ -128,7 +129,7 @@ fn register_llm<'p>(
 
         // Advertise ourself on etcd so ingress can find us
         local_model
-            .attach(&endpoint.inner, model_type_obj)
+            .attach(&endpoint.inner, model_type_obj, force)
             .await
             .map_err(to_pyerr)?;
 

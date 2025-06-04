@@ -131,6 +131,10 @@ pub struct Flags {
     #[arg(long)]
     pub kv_cache_block_size: Option<usize>,
 
+    /// Overwrite an existing ModelDeploymentCard in the key-value store
+    #[arg(long)]
+    pub force: bool,
+
     /// Additional engine-specific arguments from a JSON file.
     /// Contains a mapping of parameter names to values.
     #[arg(long)]
@@ -211,6 +215,9 @@ impl Flags {
         if let Some(weight) = self.kv_waiting_requests_weight {
             out.push("--kv-waiting-requests-weight".to_string());
             out.push(weight.to_string());
+        }
+        if self.force {
+            out.push("--force".to_string());
         }
         out.extend(self.last.clone());
         out

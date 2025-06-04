@@ -228,7 +228,7 @@ async fn add_model(
     let endpoint = endpoint_from_name(distributed, &namespace, endpoint_name)?;
 
     let mut model = LocalModel::with_name_only(&model_name);
-    model.attach(&endpoint, model_type).await?;
+    model.attach(&endpoint, model_type, false).await?;
 
     Ok(())
 }

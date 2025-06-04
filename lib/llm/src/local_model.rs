@@ -128,6 +128,7 @@ impl LocalModel {
         // --model-config takes precedence over --model-path
         let model_config_path = override_config.unwrap_or(&full_path);
         let mut card = ModelDeploymentCard::load(&model_config_path).await?;
+        card.compute_file_hashes()?;
         card.set_name(&model_name);
 
         Ok(LocalModel { full_path, card })
@@ -139,6 +140,7 @@ impl LocalModel {
         &mut self,
         endpoint: &Endpoint,
         model_type: ModelType,
+        force: bool,
     ) -> anyhow::Result<()> {
         // A static component doesn't have an etcd_client because it doesn't need to register
         let Some(etcd_client) = endpoint.drt().etcd_client() else {
@@ -147,14 +149,30 @@ impl LocalModel {
         self.ensure_unique(endpoint.component(), self.display_name())
             .await?;
 
+        // Publish the Model Deployment Card if not already present
+        let kvstore: Box<dyn KeyValueStore> = Box::new(EtcdStorage::new(etcd_client.clone()));
+        let card_store = Arc::new(KeyValueStoreManager::new(kvstore));
+        let key_slug = self.card.slug();
+        if let Some(existing) = card_store
+            .load::<ModelDeploymentCard>(model_card::ROOT_PATH, &key_slug)
+            .await?
+        {
+            if existing.file_hashes != self.card.file_hashes && !force {
+                anyhow::bail!(
+                    "ModelDeploymentCard already exists with different content. Use --force to overwrite or delete the key."
+                );
+            }
+            if !force {
+                tracing::debug!(model=%key_slug, "Model card already published" );
+                return Ok(());
+            }
+        }
+
         // Store model config files in NATS object store
         let nats_client = endpoint.drt().nats_client();
         self.card.move_to_nats(nats_client.clone()).await?;
 
-        // Publish the Model Deployment Card to etcd
-        let kvstore: Box<dyn KeyValueStore> = Box::new(EtcdStorage::new(etcd_client.clone()));
-        let card_store = Arc::new(KeyValueStoreManager::new(kvstore));
-        let key = self.card.slug().to_string();
+        let key = key_slug.to_string();
         card_store
             .publish(model_card::ROOT_PATH, None, &key, &mut self.card)
             .await?;
