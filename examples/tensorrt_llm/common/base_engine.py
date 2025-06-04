@@ -50,6 +50,15 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 
+def _to_signed_i64(value: int) -> int:
+    """Convert a Python int to signed 64-bit range by two's complement."""
+    if value >= 2**63:
+        return value - 2**64
+    if value < -(2**63):
+        return ((value + 2**63) % 2**64) - 2**63
+    return value
+
+
 class DisaggRequestType(Enum):
     CONTEXT_ONLY = "context_only"
     GENERATION_ONLY = "generation_only"
@@ -327,7 +336,7 @@ class BaseTensorrtLLMEngine:
                         self._partial_block_hashes.add(block_hash)
                         break
                     num_block_tokens.append(token_num_in_block)
-                    block_hashes.append(block_hash)
+                    block_hashes.append(_to_signed_i64(block_hash))
                     for token in block["tokens"]:
                         token_ids.append(int(token["token_id"]))
 
@@ -345,7 +354,7 @@ class BaseTensorrtLLMEngine:
                     num_block_tokens,
                     block_hashes,
                     lora_id,
-                    parent_hash,
+                    _to_signed_i64(parent_hash) if parent_hash is not None else None,
                 )
             elif data["type"] == "removed":
                 block_hashes = []
@@ -356,7 +365,7 @@ class BaseTensorrtLLMEngine:
                         )
                         self._partial_block_hashes.remove(block_hash)
                         continue
-                    block_hashes.append(block_hash)
+                    block_hashes.append(_to_signed_i64(block_hash))
 
                 logger.debug(
                     f"publish removed event: event_id: {event_id}, block_hashes: {block_hashes}"
@@ -539,16 +548,16 @@ class BaseTensorrtLLMEngine:
                 inputs=worker_inputs,
                 sampling_params=sampling_params,
                 disaggregated_params=disaggregated_params,
-                streaming=False
-                if self._server_type == ServerType.CTX
-                else request.streaming,
+                streaming=(
+                    False if self._server_type == ServerType.CTX else request.streaming
+                ),
             ):
                 # Convert the disaggregated params to OAI format so
                 # it can be sent over the network.
-                response.outputs[
-                    0
-                ].disaggregated_params = DisaggregatedTypeConverter.to_oai_disaggregated_params(
-                    response.outputs[0].disaggregated_params
+                response.outputs[0].disaggregated_params = (
+                    DisaggregatedTypeConverter.to_oai_disaggregated_params(
+                        response.outputs[0].disaggregated_params
+                    )
                 )
 
                 yield TRTLLMWorkerResponse(
