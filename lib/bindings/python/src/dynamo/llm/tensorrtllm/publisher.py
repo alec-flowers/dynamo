@@ -13,6 +13,16 @@ from typing import Callable, Optional, Union
 
 from dynamo.llm import KvEventPublisher, WorkerMetricsPublisher
 
+
+def _to_signed_i64(value: int) -> int:
+    """Convert a Python int to signed 64-bit range by two's complement."""
+    if value >= 2**63:
+        return value - 2**64
+    if value < -(2**63):
+        return ((value + 2**63) % 2**64) - 2**63
+    return value
+
+
 logging.basicConfig(level=logging.DEBUG)
 
 
@@ -261,7 +271,7 @@ class Publisher:
                         self.partial_block_hashes.add(block_hash)
                         break
                     num_block_tokens.append(token_num_in_block)
-                    block_hashes.append(block_hash)
+                    block_hashes.append(_to_signed_i64(block_hash))
                     for token in block["tokens"]:
                         token_ids.append(int(token["token_id"]))
 
@@ -279,7 +289,7 @@ class Publisher:
                     num_block_tokens,
                     block_hashes,
                     lora_id,
-                    parent_hash,
+                    _to_signed_i64(parent_hash) if parent_hash is not None else None,
                 )
             elif data["type"] == "removed":
                 block_hashes = []
@@ -290,7 +300,7 @@ class Publisher:
                         )
                         self.partial_block_hashes.remove(block_hash)
                         continue
-                    block_hashes.append(block_hash)
+                    block_hashes.append(_to_signed_i64(block_hash))
 
                 logging.debug(
                     f"publish removed event: event_id: {event_id}, block_hashes: {block_hashes}"
