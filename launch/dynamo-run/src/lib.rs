@@ -312,7 +312,7 @@ pub async fn run(
         }
         Input::Endpoint(path) => {
             let distributed_runtime = DistributedRuntime::from_settings(runtime.clone()).await?;
-            crate::input::endpoint::run(distributed_runtime, path, engine_config).await?;
+            crate::input::endpoint::run(distributed_runtime, path, engine_config, flags.force).await?;
         }
     }
 

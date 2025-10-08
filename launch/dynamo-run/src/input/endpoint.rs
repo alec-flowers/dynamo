@@ -39,6 +39,7 @@ pub async fn run(
     distributed_runtime: DistributedRuntime,
     path: String,
     engine_config: EngineConfig,
+    force: bool,
 ) -> anyhow::Result<()> {
     let cancel_token = distributed_runtime.primary_token().clone();
     let endpoint_id: EndpointId = path.parse()?;
@@ -61,7 +62,7 @@ pub async fn run(
                 Pin<Box<dyn AsyncEngineStream<Annotated<NvCreateChatCompletionStreamResponse>>>>,
             >::for_engine(engine)?;
 
-            model.attach(&endpoint, ModelType::Chat).await?;
+            model.attach(&endpoint, ModelType::Chat, force).await?;
             let fut_chat = endpoint.endpoint_builder().handler(ingress_chat).start();
 
             (Box::pin(fut_chat), Some(model.card().clone()))
@@ -86,7 +87,7 @@ pub async fn run(
                 .link(frontend)?;
             let ingress = Ingress::for_pipeline(pipeline)?;
 
-            model.attach(&endpoint, ModelType::Backend).await?;
+            model.attach(&endpoint, ModelType::Backend, force).await?;
             let fut = endpoint.endpoint_builder().handler(ingress).start();
 
             (Box::pin(fut), Some(model.card().clone()))

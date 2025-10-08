@@ -14,6 +14,7 @@
 //! - Various metadata like revision, publish time, etc.
 
 use std::fmt;
+use std::collections::HashMap;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -124,6 +125,10 @@ pub struct ModelDeploymentCard {
     /// Size of a KV cache block - vllm only currently
     /// Passed to the engine and the KV router.
     pub kv_cache_block_size: usize,
+
+    /// Blake3 hashes of the files backing this card
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub file_hashes: HashMap<String, String>,
 }
 
 impl ModelDeploymentCard {
@@ -191,6 +196,44 @@ impl ModelDeploymentCard {
     pub fn mdcsum(&self) -> String {
         let json = self.to_json().unwrap();
         format!("{}", blake3::hash(json.as_bytes()))
+    }
+
+    /// Calculate blake3 hashes of the files referenced by this card
+    pub fn compute_file_hashes(&mut self) -> anyhow::Result<()> {
+        self.file_hashes.clear();
+        if let Some(ModelInfoType::HfConfigJson(ref path)) = self.model_info {
+            self.file_hashes
+                .insert("config.json".to_string(), blake3_file(Path::new(path))?);
+        }
+        if let Some(ModelInfoType::GGUF(ref path)) = self.model_info {
+            let name = path
+                .file_name()
+                .and_then(|p| p.to_str())
+                .unwrap_or("model.gguf")
+                .to_string();
+            self.file_hashes.insert(name, blake3_file(path)?);
+        }
+        if let Some(TokenizerKind::HfTokenizerJson(ref path)) = self.tokenizer {
+            self.file_hashes
+                .insert("tokenizer.json".to_string(), blake3_file(Path::new(path))?);
+        }
+        if let Some(PromptFormatterArtifact::HfTokenizerConfigJson(ref path)) =
+            self.prompt_formatter
+        {
+            self.file_hashes.insert(
+                "tokenizer_config.json".to_string(),
+                blake3_file(Path::new(path))?,
+            );
+        }
+        if let Some(PromptFormatterArtifact::GGUF(ref path)) = self.prompt_formatter {
+            let name = path
+                .file_name()
+                .and_then(|p| p.to_str())
+                .unwrap_or("prompt.gguf")
+                .to_string();
+            self.file_hashes.insert(name, blake3_file(path)?);
+        }
+        Ok(())
     }
 
     /// Was this card last published a long time ago, suggesting the worker is gone?
@@ -633,4 +676,9 @@ mod tests {
         assert_eq!(config.bos_token_id(), 200000);
         Ok(())
     }
+}
+
+fn blake3_file(path: &Path) -> anyhow::Result<String> {
+    let bytes = std::fs::read(path)?;
+    Ok(blake3::hash(&bytes).to_string())
 }
